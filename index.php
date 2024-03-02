@@ -5,6 +5,9 @@ $requestMethod = $_SERVER['REQUEST_METHOD'];
 // Ottieni il tipo di contenuto della richiesta
 $contentType = $_SERVER['CONTENT_TYPE'];
 
+// Ottieni il tipo di contenuto accettato
+$acceptType = $_SERVER['HTTP_ACCEPT'];
+
 // Leggi il corpo della richiesta
 $requestData = file_get_contents('php://input');
 
@@ -24,19 +27,19 @@ if ($contentType === 'application/json') {
 switch ($requestMethod) {
     case 'GET':
         // Gestisci la richiesta GET
-        handleGetRequest();
+        $response = handleGetRequest();
         break;
     case 'POST':
         // Gestisci la richiesta POST
-        handlePostRequest($requestData);
+        $response = handlePostRequest($requestData);
         break;
     case 'PUT':
         // Gestisci la richiesta PUT
-        handlePutRequest($requestData);
+        $response = handlePutRequest($requestData);
         break;
     case 'DELETE':
         // Gestisci la richiesta DELETE
-        handleDeleteRequest($requestData);
+        $response = handleDeleteRequest($requestData);
         break;
     default:
         // Metodo di richiesta non valido
@@ -45,34 +48,81 @@ switch ($requestMethod) {
         break;
 }
 
-// Funzione per gestire la richiesta GET
-function handleGetRequest() {
-    // Crea una connessione al database
-    $conn = new mysqli('localhost', 'root', '', 'codicipostali');
-
-    // Controlla la connessione
-    if ($conn->connect_error) {
-        die('Connessione fallita: ' . $conn->connect_error);
-    }
-
-    // Query SQL per ottenere i dati
-    $query = "SELECT * FROM CodiciPostali";
-
-    // Esegui la query
-    $result = $conn->query($query);
-
-    if ($result->num_rows > 0) {
-        // Stampa i dati
-        while ($row = $result->fetch_assoc()) {
-            echo 'CodicePostale: ' . $row['CodicePostale'] . ', Comune: ' . $row['Comune'] . '<br>';
-        }
-    } else {
-        echo 'Nessun risultato';
-    }
-
-    // Chiudi la connessione
-    $conn->close();
+// Formatta la risposta in base al tipo di contenuto accettato
+if ($acceptType === 'application/json') {
+    header('Content-Type: application/json');
+    echo json_encode($response);
+} elseif ($acceptType === 'application/xml') {
+    header('Content-Type: application/xml');
+    echo xml_encode($response); 
+} else {
+    // Tipo di contenuto non accettato
+    http_response_code(406);
+    echo 'Tipo di contenuto non accettato';
+    exit;
 }
+
+    // Funzione per convertire un array in formato XML
+    function xml_encode($data) {
+        $xml = new SimpleXMLElement('<root/>');
+        array_to_xml($data, $xml);
+        return $xml->asXML();
+    }
+
+    // Funzione ricorsiva per convertire un array in formato XML
+    function array_to_xml($data, &$xml) {
+        foreach ($data as $key => $value) {
+            if (is_array($value)) {
+                if (is_numeric($key)) {
+                    $key = 'item' . $key;
+                }
+                $subnode = $xml->addChild($key);
+                array_to_xml($value, $subnode);
+            } else {
+                $xml->addChild("$key", htmlspecialchars("$value"));
+            }
+        }
+    }
+
+    function handleGetRequest() {
+        // Crea una connessione al database
+        $conn = new mysqli('localhost', 'root', '', 'codicipostali');
+
+        // Controlla la connessione
+        if ($conn->connect_error) {
+            die('Connessione fallita: ' . $conn->connect_error);
+        }
+
+        // Estrai il codice postale dal percorso dell'URL
+        $urlPath = explode('/', $_SERVER['REQUEST_URI']);
+        $codicePostale = $urlPath[3];
+
+        // Query SQL per ottenere i dati
+        $query = "SELECT * FROM CodiciPostali";
+        if ($codicePostale !== '') {
+            $codicePostale = $conn->real_escape_string($codicePostale); // Prevenire SQL Injection
+            $query .= " WHERE Codice = '$codicePostale'";
+        }
+
+        // Esegui la query
+        $result = $conn->query($query);
+
+        $response = [];
+
+        if ($result->num_rows > 0) {
+            // Stampa i dati
+            while ($row = $result->fetch_assoc()) {
+                $response[] = $row;
+            }
+        } else {
+            $response = ['message' => 'Nessun risultato'];
+        }
+
+        // Chiudi la connessione
+        $conn->close();
+
+        return $response;
+    }
 
 // Funzione per gestire la richiesta POST
 function handlePostRequest($requestData) {
@@ -96,20 +146,20 @@ function handlePostRequest($requestData) {
         // Esegui la query
         if ($conn->query($query) === TRUE) {
             // Imposta i dati di risposta
-            $responseData = ['status' => 'successo'];
-            echo json_encode($responseData);
+            $responseData = http_response_code(201);
+            ;
         } else {
-            echo 'Errore: ' . $query . '<br>' . $conn->error;
-            exit;
+            $responseData = ['status' => 'errore', 'message' => 'Errore: ' . $query . '<br>' . $conn->error];
         }
 
         // Chiudi la connessione
         $conn->close();
+
+        return $responseData;
     } else {
         // Dati non validi
         http_response_code(400);
-        echo 'Dati non validi';
-        exit;
+        return ['status' => 'errore', 'message' => 'Dati non validi'];
     }
 }
 
@@ -122,8 +172,7 @@ function handlePutRequest($requestData) {
     // Verifica che il terzo parametro sia presente
     if (!isset($uriParts[2])) {
         http_response_code(400);
-        echo 'Terzo parametro non presente nell\'URI ERRORE';
-        exit;
+        return ['status' => 'errore', 'message' => 'Terzo parametro non presente nell\'URI'];
     }
 
     // Usa il terzo parametro come "codicePostale"
@@ -148,20 +197,19 @@ function handlePutRequest($requestData) {
         // Esegui la query
         if ($conn->query($query) === TRUE) {
             // Imposta i dati di risposta
-            $responseData = ['status' => 'successo'];
-            echo json_encode($responseData);
+            $responseData = http_response_code(201);
         } else {
-            echo 'Errore: ' . $query . '<br>' . $conn->error;
-            exit;
+            $responseData = ['status' => 'errore', 'message' => 'Errore: ' . $query . '<br>' . $conn->error];
         }
 
         // Chiudi la connessione
         $conn->close();
+
+        return $responseData;
     } else {
         // Dati non validi
         http_response_code(400);
-        echo 'Dati non validi';
-        exit;
+        return ['status' => 'errore', 'message' => 'Dati non validi'];
     }
 }
 
@@ -186,20 +234,19 @@ function handleDeleteRequest($requestData) {
         // Esegui la query
         if ($conn->query($query) === TRUE) {
             // Imposta i dati di risposta
-            $responseData = ['status' => 'successo'];
-            echo json_encode($responseData);
+            $responseData = http_response_code(201);
         } else {
-            echo 'Errore: ' . $query . '<br>' . $conn->error;
-            exit;
+            $responseData = ['status' => 'errore', 'message' => 'Errore: ' . $query . '<br>' . $conn->error];
         }
 
         // Chiudi la connessione
         $conn->close();
+
+        return $responseData;
     } else {
         // Dati non validi
         http_response_code(400);
-        echo 'Dati non validi';
-        exit;
+        return ['status' => 'errore', 'message' => 'Dati non validi'];
     }
 }
 ?>
