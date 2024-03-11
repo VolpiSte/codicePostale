@@ -95,15 +95,18 @@ if ($acceptType === 'application/json') {
 
         // Estrai il codice postale dal percorso dell'URL
         $urlPath = explode('/', $_SERVER['REQUEST_URI']);
-        $codicePostale = $urlPath[3];
+        //$codicePostale = end($urlPath);
+        $codicePostale = $urlPath[2];
+        echo $codicePostale;
 
         // Query SQL per ottenere i dati
-        $query = "SELECT * FROM CodiciPostali";
-        if ($codicePostale !== '') {
+        if (!empty($codicePostale)) {
             $codicePostale = $conn->real_escape_string($codicePostale); // Prevenire SQL Injection
-            $query .= " WHERE Codice = '$codicePostale'";
+            $query = "SELECT Comune FROM CodiciPostali WHERE CodicePostale = '$codicePostale'";
+        } else {
+            $query = "SELECT * FROM CodiciPostali";
         }
-
+        //echo "Query: " . $query . "\n";
         // Esegui la query
         $result = $conn->query($query);
 
@@ -115,7 +118,7 @@ if ($acceptType === 'application/json') {
                 $response[] = $row;
             }
         } else {
-            $response = ['message' => 'Nessun risultato'];
+            $response = ['message' => 'Nessun risultato (databse vuoto)'];
         }
 
         // Chiudi la connessione
@@ -146,8 +149,7 @@ function handlePostRequest($requestData) {
         // Esegui la query
         if ($conn->query($query) === TRUE) {
             // Imposta i dati di risposta
-            $responseData = http_response_code(201);
-            ;
+            $responseData = ['CodicePostale' => $codicePostale, 'Comune' => $comune];
         } else {
             $responseData = ['status' => 'errore', 'message' => 'Errore: ' . $query . '<br>' . $conn->error];
         }
@@ -197,7 +199,7 @@ function handlePutRequest($requestData) {
         // Esegui la query
         if ($conn->query($query) === TRUE) {
             // Imposta i dati di risposta
-            $responseData = http_response_code(201);
+            $responseData = ['CodicePostale' => $codicePostale, 'Comune' => $comune];
         } else {
             $responseData = ['status' => 'errore', 'message' => 'Errore: ' . $query . '<br>' . $conn->error];
         }
@@ -214,39 +216,42 @@ function handlePutRequest($requestData) {
 }
 
 // Funzione per gestire la richiesta DELETE
-function handleDeleteRequest($requestData) {
-    // Convalida i dati
-    if (isset($requestData['CodicePostale'])) {
-        // Elimina i dati dal database
-        $codicePostale = $requestData['CodicePostale'];
+function handleDeleteRequest() {
+    // Ottieni l'URI e dividilo in parti
+    $uri = parse_url($_SERVER['REQUEST_URI'], PHP_URL_PATH);
+    $uriParts = explode( '/', $uri );
 
-        // Crea una connessione al database
-        $conn = new mysqli('localhost', 'root', '', 'codicipostali');
-
-        // Controlla la connessione
-        if ($conn->connect_error) {
-            die('Connessione fallita: ' . $conn->connect_error);
-        }
-
-        // Query SQL per eliminare i dati
-        $query = "DELETE FROM CodiciPostali WHERE CodicePostale = '$codicePostale'";
-
-        // Esegui la query
-        if ($conn->query($query) === TRUE) {
-            // Imposta i dati di risposta
-            $responseData = http_response_code(201);
-        } else {
-            $responseData = ['status' => 'errore', 'message' => 'Errore: ' . $query . '<br>' . $conn->error];
-        }
-
-        // Chiudi la connessione
-        $conn->close();
-
-        return $responseData;
-    } else {
-        // Dati non validi
+    // Verifica che il terzo parametro sia presente
+    if (!isset($uriParts[2])) {
         http_response_code(400);
-        return ['status' => 'errore', 'message' => 'Dati non validi'];
+        return ['status' => 'errore', 'message' => 'Terzo parametro non presente nell\'URI'];
     }
+
+    // Usa il terzo parametro come "codicePostale"
+    $codicePostale = $uriParts[2];
+
+    // Crea una connessione al database
+    $conn = new mysqli('localhost', 'root', '', 'codicipostali');
+
+    // Controlla la connessione
+    if ($conn->connect_error) {
+        die('Connessione fallita: ' . $conn->connect_error);
+    }
+
+    // Query SQL per eliminare i dati
+    $query = "DELETE FROM CodiciPostali WHERE CodicePostale = '$codicePostale'";
+
+    // Esegui la query
+    if ($conn->query($query) === TRUE) {
+        // Imposta i dati di risposta
+        $responseData = ['status' => 'successo', 'message' => 'Dato eliminato con successo'];
+    } else {
+        $responseData = ['status' => 'errore', 'message' => 'Errore: ' . $query . '<br>' . $conn->error];
+    }
+
+    // Chiudi la connessione
+    $conn->close();
+
+    return $responseData;
 }
 ?>
