@@ -93,20 +93,24 @@ if ($acceptType === 'application/json') {
             die('Connessione fallita: ' . $conn->connect_error);
         }
 
-        // Estrai il codice postale dal percorso dell'URL
+        // Estrai il parametro dal percorso dell'URL
         $urlPath = explode('/', $_SERVER['REQUEST_URI']);
-        //$codicePostale = end($urlPath);
-        $codicePostale = $urlPath[2];
-        echo $codicePostale;
+        $parametro = $urlPath[2] ?? null;
+        $valore = $urlPath[3] ?? null;
 
-        // Query SQL per ottenere i dati
-        if (!empty($codicePostale)) {
-            $codicePostale = $conn->real_escape_string($codicePostale); // Prevenire SQL Injection
-            $query = "SELECT Comune FROM CodiciPostali WHERE CodicePostale = '$codicePostale'";
-        } else {
+        // Controllo sul secondo parametro e preparazione della query SQL
+        if ($parametro === 'CAP' && !empty($valore)) {
+            $valore = $conn->real_escape_string($valore); // Prevenire SQL Injection
+            $query = "SELECT Comune FROM CodiciPostali WHERE CodicePostale = '$valore'";
+        } elseif ($parametro === 'Comune' && !empty($valore)) {
+            $valore = $conn->real_escape_string($valore); // Prevenire SQL Injection
+            $query = "SELECT CodicePostale FROM CodiciPostali WHERE Comune = '$valore'";
+        } elseif (empty($parametro)) {
             $query = "SELECT * FROM CodiciPostali";
+        } else {
+            die('Errore: URL non valido');
         }
-        //echo "Query: " . $query . "\n";
+
         // Esegui la query
         $result = $conn->query($query);
 
@@ -126,9 +130,15 @@ if ($acceptType === 'application/json') {
 
         return $response;
     }
-
 // Funzione per gestire la richiesta POST
 function handlePostRequest($requestData) {
+    // Verifica il percorso dell'URL
+    $urlPath = parse_url($_SERVER['REQUEST_URI'], PHP_URL_PATH);
+    if ($urlPath !== '/wsphp/ADD') {
+        http_response_code(400);
+        return ['status' => 'errore', 'message' => 'URL non valido'];
+    }
+
     // Convalida i dati
     if (isset($requestData['CodicePostale']) && isset($requestData['Comune'])) {
         // Inserisci i dati nel database
@@ -165,20 +175,19 @@ function handlePostRequest($requestData) {
     }
 }
 
-// Funzione per gestire la richiesta PUT
 function handlePutRequest($requestData) {
     // Ottieni l'URI e dividilo in parti
     $uri = parse_url($_SERVER['REQUEST_URI'], PHP_URL_PATH);
     $uriParts = explode( '/', $uri );
 
-    // Verifica che il terzo parametro sia presente
-    if (!isset($uriParts[2])) {
+    // Verifica che il terzo parametro sia "EDIT" e che il quarto parametro sia presente
+    if ($uriParts[2] !== 'EDIT' || !isset($uriParts[3])) {
         http_response_code(400);
-        return ['status' => 'errore', 'message' => 'Terzo parametro non presente nell\'URI'];
+        return ['status' => 'errore', 'message' => 'URL non valido'];
     }
 
-    // Usa il terzo parametro come "codicePostale"
-    $codicePostale = $uriParts[2];
+    // Usa il quarto parametro come "codicePostale"
+    $codicePostale = $uriParts[3];
 
     // Convalida i dati
     if (isset($requestData['Comune'])) {
@@ -221,14 +230,14 @@ function handleDeleteRequest() {
     $uri = parse_url($_SERVER['REQUEST_URI'], PHP_URL_PATH);
     $uriParts = explode( '/', $uri );
 
-    // Verifica che il terzo parametro sia presente
-    if (!isset($uriParts[2])) {
+    // Verifica che il terzo parametro sia "DEL" e che il quarto parametro sia presente
+    if ($uriParts[2] !== 'DEL' || !isset($uriParts[3])) {
         http_response_code(400);
-        return ['status' => 'errore', 'message' => 'Terzo parametro non presente nell\'URI'];
+        return ['status' => 'errore', 'message' => 'URL non valido'];
     }
 
-    // Usa il terzo parametro come "codicePostale"
-    $codicePostale = $uriParts[2];
+    // Usa il quarto parametro come "codicePostale"
+    $codicePostale = $uriParts[3];
 
     // Crea una connessione al database
     $conn = new mysqli('localhost', 'root', '', 'codicipostali');
@@ -254,4 +263,3 @@ function handleDeleteRequest() {
 
     return $responseData;
 }
-?>
